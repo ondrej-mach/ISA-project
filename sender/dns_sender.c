@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <ctype.h>
 
 #include <unistd.h>
 #include <errno.h>
@@ -14,6 +15,8 @@
 #define BUFFER_SIZE 512
 #define FILENAME_DELIM "x"
 #define LABEL_LENGTH 63
+#define MAX_IP_LEN 16
+#define RESOLV_CONF "/etc/resolv.conf"
 
 
 typedef struct {
@@ -69,12 +72,55 @@ void parseArguments(int argc, char **argv, Arguments *args) {
     
 }
 
+// return 0 if successful
+int getDefaultIP(char *buffer, char *confFilename) {
+    FILE *f = fopen(confFilename, "r");
+    if (f == NULL) {
+        fprintf(stderr, "Could not open `%s`\n", confFilename);
+        return 1;
+    }
+    
+    char *keyword = "nameserver";
+    int index = 0;
+    
+    int c = '\0';
+    while (c != EOF) {
+        c = fgetc(f);
+        // read until the keyword matches
+        while (c == keyword[index]) {
+            c = fgetc(f);
+            index++;
+            
+            if (keyword[index] == '\0') {
+                if (!isspace(c)) {
+                    break;
+                }
+                while (isspace(c)) {
+                    c = fgetc(f);
+                }
+                index = 0;
+                while (!isspace(c) && (c != EOF) && (index < MAX_IP_LEN)) {
+                    buffer[index++] = c;
+                    c = fgetc(f);
+                }
+                return !isspace(c);
+            }
+        }
+        // Waste the rest of the line
+        while ((c != '\n') && (c != EOF)) { c = fgetc(f); }
+    }
+    
+    return 1;
+}
+
 int sendQuery(int sock, char *payload) {
+    uint16_t static transactionID = 0;
+    
     char buffer[BUFFER_SIZE];
     // LENGTH - used only in DNS over TCP
     uint16_t *dnsLength = &((uint16_t *)buffer)[0];
-    // ID
-    ((uint16_t *)buffer)[1] = ntohs(0);
+    // TRANSACTION_ID
+    ((uint16_t *)buffer)[1] = ntohs(transactionID++);
     // FLAGS
     ((uint16_t *)buffer)[2] = ntohs(0x120);
     // QDCOUNT
@@ -134,7 +180,7 @@ int sendData(FILE *in, struct sockaddr_in addr, Arguments *args) {
     int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     
     if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
-        fprintf(stderr, "Connection to server `%s` failed.", inet_ntoa(addr.sin_addr));
+        fprintf(stderr, "Connection to server `%s` failed.\n", inet_ntoa(addr.sin_addr));
         exit(1);
     }
     
@@ -204,16 +250,23 @@ int main(int argc, char **argv) {
         .sin_port = htons(53),
     };
 	
+
+    int status;
 	if (args.upstreamIP) {
-        int status = inet_aton(args.upstreamIP, &upstreamAddr.sin_addr);
-        if (status == 0) {
-            fprintf(stderr, "Argument `%s` is not a valid adress.\n", args.upstreamIP);
+        status = inet_aton(args.upstreamIP, &upstreamAddr.sin_addr);
+    } else {
+        char defaultIP[MAX_IP_LEN];
+        if (getDefaultIP(defaultIP, RESOLV_CONF)) {
+            fprintf(stderr, "Could not get default nameserver from file `%s`.\n", RESOLV_CONF);
             exit(1);
         }
-    } else {
-        inet_aton("127.0.0.53", &upstreamAddr.sin_addr);
+        status = inet_aton(defaultIP, &upstreamAddr.sin_addr);
     }
-    
+    if (status == 0) {
+        fprintf(stderr, "Argument `%s` is not a valid adress.\n", args.upstreamIP);
+        exit(1);
+    }
+
     sendData(inFile, upstreamAddr, &args);
 	
 	fclose(inFile);
