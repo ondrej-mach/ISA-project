@@ -36,10 +36,6 @@ void parseArguments(int argc, char **argv, Arguments *args) {
 	args->dstFilepath = argv[2];
 }
 
-bool isHex(char c) {
-	return ((c >= '0') && (c <= '9')) || ((c >= 'a') && (c <= 'f'));
-}
-
 // Basically the same as finding postfix but it checks for the dot before postfix
 bool isSubdomain(char *str, char *postfix) {
 	int i=0, j=0;
@@ -68,29 +64,51 @@ bool isSubdomain(char *str, char *postfix) {
 	return false;
 }
 
+
+bool isHex(char c) {
+	return ((c >= '0') && (c <= '9')) || ((c >= 'a') && (c <= 'f'));
+}
+
+char hexToNum(char c) {
+	if ((c >= '0') && (c <= '9')) {
+		return c - '0';
+	} else {
+		return c + 10 - 'a';
+	}
+}
+
+char hexToByte(char upper, char lower) {
+	return hexToNum(upper)*16 + hexToNum(lower);
+}
+
 // decoded buffer should be exactly as long as encoded
 // limit sets maximum length of encoded buffer
 // Set limit to 0 to end at first \0
 // returns number of processed characters in encoded array
-
-int hexDecode(char *encoded, char *decoded, int limit) {
+int hexDecode(char *encoded, char *decoded, int *decodedLen) {
 	int encodedIndex = 0;
-	int decodedIndex = 0;
 	
 	char firstChar = '\0';
-	while ((limit == 0) || (encodedIndex < limit)) {
+	while (true) {
 		char c = encoded[encodedIndex];
 		
 		if (!isHex(c)) {
-			if (firstChar != '\0') {
-				encodedIndex--;
-			}
 			break;
+		} 
+		
+		if (encodedIndex%2 == 0) {
+			firstChar = c;
+		} else {
+			decoded[encodedIndex/2] = hexToByte(firstChar, c);
 		}
 		
+		encodedIndex++;
 	}
-	return encodedIndex;
-	
+	decoded[encodedIndex/2] = '\0';
+	if (decodedLen) {
+		*decodedLen = encodedIndex/2;
+	}
+	return (encodedIndex/2)*2;
 }
 
 // returns 0 on success
@@ -103,42 +121,50 @@ int receiveRequest(int conn, char *payload, int counter) {
 	}
 	
 	char buffer[BUFFER_SIZE];
-	
-	int bufferIndex = 18;
+	// Skip headers, go directly to payload
+	int bufferIndex = 12;
 	int payloadIndex = 0;
-	int receivedBytes = 0;
 	int labelRemaining = 0;
-	bool finished = false;
+	int packetSize;
+	int n;
+	bool firstLabel = true;
 	
-	while (!finished) {
-		int n = read(conn, &buffer[bufferIndex], BUFFER_SIZE-receivedBytes);
-		if (n == 0) {
-// TODO chyba tady
-			fprintf(stderr, "[%d]\tConnection timed out.\n", counter);
-			return 1;
-		}
-		receivedBytes += n;
-		
-		while (bufferIndex < receivedBytes) {
-			if (labelRemaining < 1) {
-				labelRemaining = buffer[bufferIndex];
-				if (labelRemaining == 0) {
-					finished = true;
-					break;
+	n = read(conn, buffer, 2);
+	if (n != 2) {
+		return 1;
+	}
+	packetSize = htons(*(uint16_t *)buffer);
+	
+	n = read(conn, buffer, packetSize);
+	if (n != packetSize) {
+		return 1;
+	}
+	
+	while (bufferIndex < packetSize) {
+		if (labelRemaining == 0) {
+			// This is the place where we read the length of next label
+			labelRemaining = buffer[bufferIndex];
+			// If we read 0, then this was the last label
+			if (labelRemaining == 0) {
+				payload[payloadIndex] = '\0';
+				return 0;
+			} else {
+				if (firstLabel) {
+					firstLabel = false;
 				} else {
+					// There is next label coming, so we write . as delimiter
 					payload[payloadIndex] = '.';
 					payloadIndex++;
 				}
-			} else {
-				payload[payloadIndex] = buffer[bufferIndex];
-				labelRemaining--;
-				payloadIndex++;
 			}
-			bufferIndex++;
+		} else {
+			payload[payloadIndex] = buffer[bufferIndex];
+			labelRemaining--;
+			payloadIndex++;
 		}
-		
+		bufferIndex++;
 	}
-	
+	return 1;
 }
 
 void handleConnection(int conn, int counter, Arguments *args) {
@@ -153,54 +179,50 @@ void handleConnection(int conn, int counter, Arguments *args) {
 			break;
 		}
 		
-		if (hexDecode(hexEncoded, payload, 0)) {
-			fprintf(stderr, "[%d]\tWrong format, could not decode from hex\n", counter);
-			break;
-		}
-		
+		int processed = 0;
 		// Process this request only if it has the correct domain name
-		if (!failed && isSubdomain(payload, args->baseHost)) {
-			char *contentPtr = payload;
-			
+		if (!failed && isSubdomain(hexEncoded, args->baseHost)) {
 			// If file is not yet open, we need to open it
 			if (f == NULL) {
-				// Process the payload into filename and content of the file
-				int i = 0;
-				while (true) {
-					// handling wrong format
-					if (payload[i] == '\0') {
-						fprintf(stderr, "[%d]\tWrong format\n", counter);
-						failed = true;
-						break;
-					}
-					// we have found the end of the filename
-					if (payload[i] == FILENAME_DELIM) {
-						payload[i] = '\0';
-						contentPtr = &payload[i+1];
-						break;
-					}
-					// nothing interestning, go to the next character
-					i++; 
+				// Process the payload into filename
+				processed = hexDecode(hexEncoded, payload, NULL);
+				if (hexEncoded[processed] != FILENAME_DELIM) {
+					failed = true;
+					fprintf(stderr, "[%d]\tWrong format\n", counter);
+					continue;
 				}
+				processed++;
 				
-				if (!failed) {
-					fprintf(stderr, "[%d]\tOpening file `%s`\n", counter, payload);
-					f = fopen(payload, "w");
-					if (f == NULL) {
-						failed = true;
-						fprintf(stderr, "[%d]\tCould not open file `%s` for writing\n", counter, payload);
-					}
+				fprintf(stderr, "[%d]\tOpening file `%s`\n", counter, payload);
+				f = fopen(payload, "w");
+				if (f == NULL) {
+					failed = true;
+					fprintf(stderr, "[%d]\tCould not open file `%s` for writing\n", counter, payload);
+					continue;
 				}
+			}
 			
-				if (f) {
-					fprintf(f, "%s", contentPtr);
+			int decodedLen;
+			processed += hexDecode(&hexEncoded[processed], payload, &decodedLen);
+			fwrite(payload, decodedLen, 1, f);
+			
+			if (hexEncoded[processed] != '.') {
+				if (hexEncoded[processed] == FILENAME_DELIM) {
+					break;
+				} else {
+					fprintf(stderr, "[%d]\tBad encoding: %c\n", counter, hexEncoded[processed]);
+					failed = true;
+					continue;
 				}
 			}
 		}
 	}
 	
-	fclose(f);
-	fprintf(stderr, "[%d]\tFile received, closing connection.\n", counter);
+	if (f) {
+		fprintf(stderr, "[%d]\tClosing file.\n", counter);
+		fclose(f);
+	}
+	fprintf(stderr, "[%d]\tClosing connection.\n", counter);
 	close(conn);
 	exit(0);
 }
@@ -240,6 +262,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Cannot write into folder `%s`\n", args.dstFilepath);
 		exit(1);
 	}
+	chdir(args.dstFilepath);
 	
 	// Create the socket
     int sock = socket(AF_INET, SOCK_STREAM, 0);
