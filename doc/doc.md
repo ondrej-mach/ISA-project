@@ -40,35 +40,124 @@ Jedna tato část má maximální délku 63 znaků, celá doména může být dl
 V této implementaci obsahuje doména pouze jednu část (label) se zakódovanými znaky, kterou následuje `BASE_HOST` zadaný jako argument.
 
 Ve výsledku tak jeden paket DNS přenese až 31 bajtů výsledného souboru.
- 
+
+\pagebreak
+
 ## Implementace komponentu sender
 
+DNS sender akceptuje pouze parametry, které jsou v zadání, neimplementuje žádná rozšíření.
+Při vynechání volitelného parametru `-u` je adresa výchozího DNS server načtena z `/etc/resolv.conf`.
 
+Sender je navržen tak, že po jednom bytu načítá jméno souboru a poté obsah souboru.
+Toto byte je kódován do hexadecimální reprezentace v ASCII a uložen do bufferu k odeslání.
+Buffer s obsahem k odeslání je omezen na 63 bytů, což je maximální délka labelu.
+
+Po naplnění bufferu, nebo skončení souboru je zavolána funkce `sendQuery`, která odešle obsah bufferu.
+
+Funkce `sendQuery` vytvoří validní DNS paket a odešle ho do zadané schránky.
 
 ## Implementace komponentu receiver
+
+Implementace receiveru je poněkud zajímavější. Parametry opět zůstávají stejné jako v zadání.
+
+Receiver používá volání `fork` aby mohl paralelně obsluhovat více připojení.
+Parent proces celou dobu čeká na nové připojení od klienta.
+Jakmile se klient připojí, je zavolán `fork` pro vytvoření child procesu.
+Child proces zavolá funkci `handleConnection` a parent proces opět čeká.
+Z tohoto důvodu jsou výpisy na stderr číslované, každé nové připojení má své číslo.
+
+Připojení probíhá do té doby, než je zakódovaný obsah souboru ukončen delimiterem (znak `'x'`).
+V případě, že je vadné kódování server nahlásí chybu a ukončí spojení.
+Pokud nebude konec domény odpovídat zadané doméně, bude tento dotaz ignorován, ale připojení zůstává aktivní.
 
 Server běží na cílovém počítači jako root, proto je důležité dbát i na bezpečnostní opatření.
 Bez kontroly jmen souborů, která přichází od klienta by mohlo dojít k tzv. path traversal.
 To znamená, že pokud by klient poslal jméno souboru např. `../file.txt` soubor by se uložil mimo původní složku.
 Toto je velmi nebezpečné, obzvlášť za roota, který může přepsat jakýkoli soubor v systému.
-Implementace receiveru předchází této zranitelnosti tak, že nepovolí žádný znak lomítka ve jméně souboru.
+Implementace receiveru předchází této zranitelnosti tak, že nepovolí žádný znak lomítka ve jméně souboru.¨
+
+\pagebreak
 
 ## Testování
 
-Projekt byl testován lokálně.
-Pro přenos souboru je třeba nejprve spustit server.
+Projekt byl testován lokálně, ale sputění na více počítačích v síti by probíhalo analogicky.
+Pokud není projekt zkompilovaný, je třeba spustit příkaz `make` v kořenovém adresáři projektu.
+
+### Receiver
+Pro přenos souboru je třeba nejprve spustit receiver.
 Server musí být spuštěn jako root protože komunikuje na portu 53.
 Tento port patří mezi tzv. well-known porty, které jsou definovány jako rozsah od 1 do 1023.
 
 ```
-$ ./dns_receiver example.com files
+# ./dns_receiver example.com files
 Listening for new connections...
 ```
 
 `example.com` je koncem domén, ve kterých budou přenášena data. 
 `files` je jméno složky, do které budou ukládány přijaté soubory.
 
+Při spuštění může dojít k problému, že lokální DNS server již naslouchá na portu 53.
+V tomto případě je potřeba zjistit, o který proces se jedná a ukončit jej.
+
+```
+# ./dns_receiver example.com files
+Could not bind to the socket.
+```
+
+### Sender
+
+Nyní je možné spustit sender. 
+Ten už není potřeba spouštět jako root, protože používá dynamický port.
+
+```
+$ python -c 'print(100*"A")' | ./dns_sender -b example.com abcd
+[INIT] 127.0.0.53
+[ENCD] a         0 '61x414141414141414141414141414141414141414141414141414141414141.example.com'
+[SENT] a         0 30B to 127.0.0.53
+[ENCD] a         1 '41414141414141414141414141414141414141414141414141414141414141.example.com'
+[SENT] a         1 31B to 127.0.0.53
+[ENCD] a         2 '41414141414141414141414141414141414141414141414141414141414141.example.com'
+[SENT] a         2 31B to 127.0.0.53
+[ENCD] a         3 '41414141414141410ax.example.com'
+[SENT] a         3 9B to 127.0.0.53
+[CMPL] a of 101B
+```
+
+Po odeslání se v terminálu s běžícím servere objeví nové hlášky.
+
+```
+# ./dns_receiver example.com files
+Listening for new connections...
+[INIT] 127.0.0.1
+[1]     Connection started.
+[1]     Opening file `a`
+[PARS] a         0 '61x414141414141414141414141414141414141414141414141414141414141.example.com'
+[RECV] a         0 30B from 127.0.0.1
+[PARS] a         1 '41414141414141414141414141414141414141414141414141414141414141.example.com'
+[RECV] a         1 31B from 127.0.0.1
+[PARS] a         2 '41414141414141414141414141414141414141414141414141414141414141.example.com'
+[RECV] a         2 31B from 127.0.0.1
+[PARS] a         3 '41414141414141410ax.example.com'
+[RECV] a         3 9B from 127.0.0.1
+[1]     Closing file.
+[1]     Closing connection.
+[CMPL] a of 101B
+```
+
+### Výsledky
+
+Jak je viditelné z logů, pakety i jejich obsah spolu korespondují.
+Pokud se nyní podíváme do složky `files` zadané jako parametr receiveru,
+najdeme soubor `abcd`. 
+Tento test byl proveden na více souborech, aby byla ověřena funkčnost programu.
+Velikost přeneseného souboru je omezena pouze časem a operačním systémem.
+Největší testovaný soubor bylo video velikosti 600 MB, přenos trval v řádu minut.
+
+### Wireshark
+
 Pro sledování paketů je také vhodné zapnout nástroj Wireshark.
 Pro tento případ bylo nastaveno rozhraní na `any` a filtr na `dns.qry.name matches "example.com$"`.
-![Captured DNS packets in Wireshark](img/wireshark1.png)
+
+![DNS pakety v nástroji Wireshark](img/wireshark1.png)
+
 
