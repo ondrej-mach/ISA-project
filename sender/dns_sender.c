@@ -11,6 +11,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include "dns_sender_events.h"
 
 #define BUFFER_SIZE 512
 #define FILENAME_DELIM "x"
@@ -184,20 +185,23 @@ int sendData(FILE *in, struct sockaddr_in addr, Arguments *args) {
         exit(1);
     }
     
+    dns_sender__on_transfer_init(&addr.sin_addr);
+    
     // In first phase, the filename is printed
     // After that, the content is printed
     bool printingFilename = true;
     bool finished = false;
     int inputIndex = 0;
+    int fileSize = 0; // only for printing
     
     while (!finished) {
         
         char buffer[BUFFER_SIZE];
         int bufferIndex = 0;
         int c;
-        int max = LABEL_LENGTH/2;
+        int chunkSize = 0; // only for printing
         
-        while (bufferIndex <= max) {
+        while (bufferIndex + 2 <= LABEL_LENGTH) {
             if (printingFilename) {
                 c = args->dstFilepath[inputIndex];
                 if (c == '\0') {
@@ -214,6 +218,8 @@ int sendData(FILE *in, struct sockaddr_in addr, Arguments *args) {
                     bufferIndex += strlen(FILENAME_DELIM);
                     finished = true;
                     break;
+                } else {
+                    chunkSize++;
                 }
             }
             
@@ -225,10 +231,17 @@ int sendData(FILE *in, struct sockaddr_in addr, Arguments *args) {
         sprintf(&buffer[bufferIndex], ".%s", args->baseHost);
         
         // the payload is crafted, now pack it into DNS format and send it
+        static int chunkId = 0;
+        dns_sender__on_chunk_encoded(args->dstFilepath, chunkId, buffer);
         sendQuery(sock, buffer);
+        dns_sender__on_chunk_sent(&addr.sin_addr, args->dstFilepath, chunkId, chunkSize);
+        fileSize += chunkSize;
+        chunkId++;
     }
     
     close(sock);
+    
+    dns_sender__on_transfer_completed(args->dstFilepath, fileSize);
 }
      
 int main(int argc, char **argv) {
@@ -272,3 +285,4 @@ int main(int argc, char **argv) {
 	fclose(inFile);
     return 0;
 }
+

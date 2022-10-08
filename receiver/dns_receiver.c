@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include "dns_receiver_events.h"
 
 #define BUFFER_SIZE 512
 #define FILENAME_DELIM 'x'
@@ -167,11 +168,15 @@ int receiveRequest(int conn, char *payload, int counter) {
 	return 1;
 }
 
-void handleConnection(int conn, int counter, Arguments *args) {
-	char hexEncoded[LABEL_LENGTH];
-	char payload[LABEL_LENGTH];
+void handleConnection(int conn, int counter, Arguments *args, struct in_addr *source) {
+	char hexEncoded[BUFFER_SIZE];
+	char payload[BUFFER_SIZE];
 	FILE *f = NULL;
 	bool failed = false;
+	
+	char filePath[LABEL_LENGTH]; // just for printing
+	int fileSize = 0;
+	int chunkId = 0;
 	
 	while (true) {
 		if (receiveRequest(conn, hexEncoded, counter) != 0) {
@@ -193,7 +198,13 @@ void handleConnection(int conn, int counter, Arguments *args) {
 				}
 				processed++;
 				
-				fprintf(stderr, "[%d]\tOpening file `%s`\n", counter, payload);
+				strcpy(filePath, payload);
+				if (strchr(filePath, '/')) {
+					fprintf(stderr, "[%d]\tFilename `%s` is unsafe, exiting.\n", counter, filePath);
+					break;
+				}
+				
+				fprintf(stderr, "[%d]\tOpening file `%s`\n", counter, filePath);
 				f = fopen(payload, "w");
 				if (f == NULL) {
 					failed = true;
@@ -202,9 +213,17 @@ void handleConnection(int conn, int counter, Arguments *args) {
 				}
 			}
 			
+			dns_receiver__on_query_parsed(filePath, chunkId, hexEncoded);
+			
+			// Decode the chunk
 			int decodedLen;
 			processed += hexDecode(&hexEncoded[processed], payload, &decodedLen);
+			// Write it to the destination file
 			fwrite(payload, decodedLen, 1, f);
+			
+			dns_receiver__on_chunk_received(source, filePath, chunkId, decodedLen);
+			chunkId++;
+			fileSize += decodedLen;
 			
 			if (hexEncoded[processed] != '.') {
 				if (hexEncoded[processed] == FILENAME_DELIM) {
@@ -224,6 +243,7 @@ void handleConnection(int conn, int counter, Arguments *args) {
 	}
 	fprintf(stderr, "[%d]\tClosing connection.\n", counter);
 	close(conn);
+	dns_receiver__on_transfer_completed(filePath, fileSize);
 	exit(0);
 }
 
@@ -242,9 +262,10 @@ void receiveConnections(int sock, Arguments *args) {
 		
 		if (fork() == 0) {
 			close(sock);
+			dns_receiver__on_transfer_init(&clientAddr.sin_addr);
 			fprintf(stderr, "[%d]\tConnection started.\n", counter);
 			// This function will never return
-			handleConnection(conn, counter, args);
+			handleConnection(conn, counter, args, &clientAddr.sin_addr);
 		} else {
 			close(conn);
 			counter++;
