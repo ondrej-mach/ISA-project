@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 #include <unistd.h>
+#include <sys/stat.h>
 #include <errno.h>
 
 #include <sys/socket.h>
@@ -134,7 +135,7 @@ int receiveRequest(int conn, char *payload, int counter) {
 	if (n != 2) {
 		return 1;
 	}
-	packetSize = htons(*(uint16_t *)buffer);
+	packetSize = ntohs(*(uint16_t *)buffer);
 	
 	n = read(conn, buffer, packetSize);
 	if (n != packetSize) {
@@ -168,6 +169,36 @@ int receiveRequest(int conn, char *payload, int counter) {
 	return 1;
 }
 
+bool safeName(char *name) {
+	if ((strlen(name) > 0) && (name[0] == '/')) {
+		return false;
+	}
+	if (strstr(name, "..") != NULL) {
+		return false;
+	}
+	return true;
+}
+
+void mkdir_p(const char *filename) {
+    char tmp[256];
+    char *p = NULL;
+    size_t len;
+
+	strncpy(tmp, filename, 256);
+	
+	int index = 0;
+	
+    while (tmp[index]) {
+		if (tmp[index] == '/') {
+			tmp[index] = '\0';
+			mkdir(tmp, 0777);
+			tmp[index] = '/';
+		}
+		index++;
+	}
+}
+
+
 void handleConnection(int conn, int counter, Arguments *args, struct in_addr *source) {
 	char hexEncoded[BUFFER_SIZE];
 	char payload[BUFFER_SIZE];
@@ -199,16 +230,19 @@ void handleConnection(int conn, int counter, Arguments *args, struct in_addr *so
 				processed++;
 				
 				strcpy(filePath, payload);
-				if (strchr(filePath, '/')) {
+				
+				if (!safeName(filePath)) {
 					fprintf(stderr, "[%d]\tFilename `%s` is unsafe, exiting.\n", counter, filePath);
 					break;
 				}
 				
+				fprintf(stderr, "[%d]\tCreating directories for file\n", counter);
+				mkdir_p(filePath);
 				fprintf(stderr, "[%d]\tOpening file `%s`\n", counter, filePath);
-				f = fopen(payload, "w");
+				f = fopen(filePath, "w");
 				if (f == NULL) {
 					failed = true;
-					fprintf(stderr, "[%d]\tCould not open file `%s` for writing\n", counter, payload);
+					fprintf(stderr, "[%d]\tCould not open file `%s` for writing\n", counter, filePath);
 					continue;
 				}
 			}

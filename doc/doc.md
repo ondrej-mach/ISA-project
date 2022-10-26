@@ -5,7 +5,7 @@ Ondřej Mach (xmacho12)
 ## Návrh
 
 Největší otázkou návrhu bylo kódování souboru při přenosu.
-Doménové jméno smí obsahovat pouze písmena (veklká i malá) čísla a pomlčku.
+Doménové jméno smí obsahovat pouze písmena (velká i malá) čísla a pomlčku.
 Přenášený soubor může obsahovat jakékoli hodnoty bajtů.
 Proto je nutné použít kódování.
 
@@ -74,7 +74,7 @@ Server běží na cílovém počítači jako root, proto je důležité dbát i 
 Bez kontroly jmen souborů, která přichází od klienta by mohlo dojít k tzv. path traversal.
 To znamená, že pokud by klient poslal jméno souboru např. `../file.txt` soubor by se uložil mimo původní složku.
 Toto je velmi nebezpečné, obzvlášť za roota, který může přepsat jakýkoli soubor v systému.
-Implementace receiveru předchází této zranitelnosti tak, že nepovolí žádný znak lomítka ve jméně souboru.¨
+Implementace receiveru předchází této zranitelnosti tak, že nepovolí žádné jméno souboru, které začíná lomítkem nebo obsahuje dvě tečky za sebou.
 
 \pagebreak
 
@@ -110,7 +110,7 @@ Nyní je možné spustit sender.
 Ten už není potřeba spouštět jako root, protože používá dynamický port.
 
 ```
-$ python -c 'print(100*"A")' | ./dns_sender -b example.com abcd
+$ python3 -c 'print(100*"A")' | ./dns_sender -b example.com abcd
 [INIT] 127.0.0.53
 [ENCD] a         0 '61x414141414141414141414141414141414141414141414141414141414141.example.com'
 [SENT] a         0 30B to 127.0.0.53

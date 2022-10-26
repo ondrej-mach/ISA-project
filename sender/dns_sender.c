@@ -121,17 +121,17 @@ int sendQuery(int sock, char *payload) {
     // LENGTH - used only in DNS over TCP
     uint16_t *dnsLength = &((uint16_t *)buffer)[0];
     // TRANSACTION_ID
-    ((uint16_t *)buffer)[1] = ntohs(transactionID++);
+    ((uint16_t *)buffer)[1] = htons(transactionID++);
     // FLAGS
-    ((uint16_t *)buffer)[2] = ntohs(0x120);
+    ((uint16_t *)buffer)[2] = htons(0x120);
     // QDCOUNT
-    ((uint16_t *)buffer)[3] = ntohs(1);
+    ((uint16_t *)buffer)[3] = htons(1);
     // ANCOUNT
-    ((uint16_t *)buffer)[4] = ntohs(0);
+    ((uint16_t *)buffer)[4] = htons(0);
     // NSCOUNT
-    ((uint16_t *)buffer)[5] = ntohs(0);
+    ((uint16_t *)buffer)[5] = htons(0);
     // ARCOUNT
-    ((uint16_t *)buffer)[6] = ntohs(0);
+    ((uint16_t *)buffer)[6] = htons(0);
     
     int payloadLen = strlen(payload);
     
@@ -163,13 +163,13 @@ int sendQuery(int sock, char *payload) {
     
     buffer[bufferIndex++] = 0x00;
     // QTYPE
-    *(uint16_t *)&buffer[bufferIndex] = ntohs(1);
+    *(uint16_t *)&buffer[bufferIndex] = htons(1);
     bufferIndex += 2;
     // QCLASS
-    *(uint16_t *)&buffer[bufferIndex] = ntohs(1);
+    *(uint16_t *)&buffer[bufferIndex] = htons(1);
     bufferIndex += 2;
     
-    *dnsLength = ntohs(bufferIndex-2);
+    *dnsLength = htons(bufferIndex-2);
     
     if (write(sock, buffer, bufferIndex) < bufferIndex) {
         fprintf(stderr, "Error while sending data.\n");
