@@ -1,0 +1,39 @@
+Autor: Ondřej Mach
+Login: xmacho12
+Datum: 27. 10. 2022
+
+Rozsireni, Omezeni:
+Sender i receiver jsou implementovány streamově a nepoužívají dynamickou alokaci.
+Díky tomu je velikost přeneseného souboru prakticky neomezená.
+Je ale možné, že při určité velikosti nastane overflow některé proměnné.
+Největší přenesený soubor měl 600 MB, větší nebyly testovány.
+
+Jméno souboru smí být dlouhé maximálně 31B, protože musí být přeneseno v prvním paketu.
+Toto omezení je na straně reeiveru.
+
+Program přenáší soubory jakéhokoli typu, včetně binárních souborů.
+
+Oproti zadání receiver implementuje rozšíření, že může obsluhovat více senderů najednou.
+Tato vlastnost byla testována spuštěním více senderů.
+Výpisky z příjmu jednotlivých souborů se potom prolínaly.
+
+Více v manual.pdf
+
+Spusteni:
+Implementace je presne podle zadani
+$ dns_sender -u 127.0.0.1 example.com data.txt ./data.txt
+# dns_receiver example.com ./data
+
+Odevzdane soubory:
+.
+├── Makefile
+├── README
+├── manual.pdf
+├── receiver
+│   ├── dns_receiver.c
+│   ├── dns_receiver_events.c
+│   └── dns_receiver_events.h
+└── sender
+    ├── dns_sender.c
+    ├── dns_sender_events.c
+    └── dns_sender_events.h
