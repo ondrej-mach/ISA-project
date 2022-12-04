@@ -4,15 +4,13 @@
 #include <netinet/in.h>
 
 /**
- * Tato metoda je volána serverem (příjemcem) při .
+ * Tato metoda je volána serverem (příjemcem) při přijetí zakódovaných dat od klienta (odesílatele).
  * V případě použití více doménových jmen pro zakódování dat, volejte funkci pro každé z nich.
  *
- * @param source Adresa odesílatele
  * @param filePath Cesta k cílovému souboru
- * @param chunkId Identifikátor části dat
  * @param encodedData Zakódovaná data do doménového jména (např.: "acfe2a42b.example.com")
  */
-void dns_receiver__on_query_parsed(char *filePath, int chunkId, char *encodedData);
+void dns_receiver__on_query_parsed(char *filePath, char *encodedData);
 
 /**
  * Tato metoda je volána serverem (příjemcem) při příjmu části dat od klienta (odesílatele).

@@ -1,7 +1,7 @@
-#include "dns_sender_events.h"
-#include<stdio.h>
+#include <stdio.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include "dns_sender_events.h"
 
 #define NETADDR_STRLEN (INET6_ADDRSTRLEN > INET_ADDRSTRLEN ? INET6_ADDRSTRLEN : INET_ADDRSTRLEN)
 #define CREATE_IPV4STR(dst, src) char dst[NETADDR_STRLEN]; inet_ntop(AF_INET, src, dst, NETADDR_STRLEN)

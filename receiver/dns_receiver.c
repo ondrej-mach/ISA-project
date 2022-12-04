@@ -25,7 +25,7 @@ typedef struct {
 } Arguments;
 
 void usage() {
-    fprintf(stderr, "Usage:\ndns_receiver {BASE_HOST} {DST_FILEPATH}\n");
+    fprintf(stderr, "Usage:\ndns_receiver {BASE_HOST} {DST_DIRPATH}\n");
 }
 
 void parseArguments(int argc, char **argv, Arguments *args) {
@@ -247,7 +247,7 @@ void handleConnection(int conn, int counter, Arguments *args, struct in_addr *so
 				}
 			}
 			
-			dns_receiver__on_query_parsed(filePath, chunkId, hexEncoded);
+			dns_receiver__on_query_parsed(filePath, hexEncoded);
 			
 			// Decode the chunk
 			int decodedLen;

@@ -76,6 +76,23 @@ To znamená, že pokud by klient poslal jméno souboru např. `../file.txt` soub
 Toto je velmi nebezpečné, obzvlášť za roota, který může přepsat jakýkoli soubor v systému.
 Implementace receiveru předchází této zranitelnosti tak, že nepovolí žádné jméno souboru, které začíná lomítkem nebo obsahuje dvě tečky za sebou.
 
+## Omezení a rozšíření
+
+Sender i receiver jsou implementovány streamově a nepoužívají dynamickou alokaci.
+Díky tomu je velikost přeneseného souboru prakticky neomezená.
+Je ale možné, že při určité velikosti nastane overflow některé proměnné.
+Největší přenesený soubor měl 600 MB, větší nebyly testovány.
+
+Jméno souboru smí být dlouhé maximálně 31B, protože musí být přeneseno v prvním paketu.
+Toto omezení je na straně reeiveru.
+
+Program přenáší soubory jakéhokoli typu, včetně binárních souborů.
+
+Oproti zadání receiver implementuje rozšíření, že může obsluhovat více senderů najednou.
+Tato vlastnost byla testována spuštěním více senderů.
+Výpisky z příjmu jednotlivých souborů se potom prolínaly.
+
+
 \pagebreak
 
 ## Testování
@@ -84,6 +101,7 @@ Projekt byl testován lokálně, ale sputění na více počítačích v síti b
 Pokud není projekt zkompilovaný, je třeba spustit příkaz `make` v kořenovém adresáři projektu.
 
 ### Receiver
+
 Pro přenos souboru je třeba nejprve spustit receiver.
 Server musí být spuštěn jako root protože komunikuje na portu 53.
 Tento port patří mezi tzv. well-known porty, které jsou definovány jako rozsah od 1 do 1023.
@@ -143,6 +161,7 @@ Listening for new connections...
 [1]     Closing connection.
 [CMPL] a of 101B
 ```
+\newpage
 
 ### Výsledky
 
@@ -150,7 +169,6 @@ Jak je viditelné z logů, pakety i jejich obsah spolu korespondují.
 Pokud se nyní podíváme do složky `files` zadané jako parametr receiveru,
 najdeme soubor `abcd`. 
 Tento test byl proveden na více souborech, aby byla ověřena funkčnost programu.
-Velikost přeneseného souboru je omezena pouze časem a operačním systémem.
 Největší testovaný soubor bylo video velikosti 600 MB, přenos trval v řádu minut.
 
 ### Wireshark

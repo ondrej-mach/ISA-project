@@ -29,17 +29,13 @@ typedef struct {
 
 
 void usage() {
-    fprintf(stderr, "Usage:\ndns_sender [-b BASE_HOST] [-u UPSTREAM_DNS_IP] {DST_FILEPATH} [SRC_FILEPATH]\n");
+    fprintf(stderr, "Usage:\ndns_sender [-u UPSTREAM_DNS_IP] {BASE_HOST} {DST_FILEPATH} [SRC_FILEPATH]\n");
 }
 
 void parseArguments(int argc, char **argv, Arguments *args) {
 	int c;
-	while ((c = getopt(argc, argv, "b:u:")) != EOF) {
+	while ((c = getopt(argc, argv, "u:")) != EOF) {
 		switch (c) {
-			case 'b':
-				args->baseHost = optarg;
-				break;
-			
 			case 'u':
 				args->upstreamIP = optarg;
 				break;
@@ -53,18 +49,15 @@ void parseArguments(int argc, char **argv, Arguments *args) {
 	argc -= optind;
 	argv += optind;
     
-    if (args->baseHost == NULL) {
-        usage();
-        exit(1);
-    }
-    
-    // parse remaining 1 or 2 positional arguments
-    if (argc >= 1 && argc <= 2) {
+    // parse remaining 2 or 3 positional arguments
+    if (argc >= 2 && argc <= 3) {
+        // mandatory base host
+        args->baseHost = argv[0];
         // mandatory dst file name
-        args->dstFilepath = argv[0];
+        args->dstFilepath = argv[1];
         // optional src file
-        if (argc >= 2) {
-            args->srcFilepath = argv[1];
+        if (argc >= 3) {
+            args->srcFilepath = argv[2];
         }
     } else {
         usage();
